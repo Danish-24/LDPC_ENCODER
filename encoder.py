@@ -1,6 +1,7 @@
 from random import randint
 import numpy as np
 import math
+import matplotlib.pyplot as plt
  
 def msg_gen(k):
     msg = []
@@ -114,26 +115,52 @@ def decoder(c,H,p,iterations,m,n):
 def find_msg(c,cols):
     return c[cols]
 
+def main(prob,k,n,H,iter):
+    message = msg_gen(k)
+    G,free_cols = generator_mat(n,k,H)
+    Code_wrd = encoder(G,message)
+    flip_C_wrd = bit_flip(Code_wrd,n,prob)
+    decoded = decoder(flip_C_wrd,H,prob,iter,n-k,n)
+    final_msg = find_msg(decoded,free_cols)
+    if np.array_equal(message,final_msg):
+        return 1
+    else:
+        return 0
+    # print(H)
+    # print(message)
+    # print(G)
+    # print(Code_wrd)
+    # print(flip_C_wrd)
+    # print(decoded)
+    # print(final_msg)
+
+
 k = int(input("len of msg:"))
 n = int(input("len of codeword:"))
 H = []
-prob = 0.05
 for i in range(n-k):
     print(f"give {n} bits input for {i}th row")
     row = input().split()
     row = list(map(int,row))
     H.append(row)
 H = np.array(H)
-message = msg_gen(k)
-G,free_cols = generator_mat(n,k,H)
-Code_wrd = encoder(G,message)
-flip_C_wrd = bit_flip(Code_wrd,n,prob)
-decoded = decoder(flip_C_wrd,H,prob,50,n-k,n)
-final_msg = find_msg(decoded,free_cols)
-print(H)
-print(message)
-print(G)
-print(Code_wrd)
-print(flip_C_wrd)
-print(decoded)
-print(final_msg)
+trials = 3000
+for iter in range(10,101,20):
+    p_vals = []
+    rates = []
+    p = 0.02
+    while p<0.5:
+        p_vals.append(p)
+        eff = 0
+        for i in range(trials):
+            eff+=main(p,k,n,H,iter)
+        eff = eff/trials
+        rates.append(eff)
+        p+=0.02
+
+    plt.plot(p_vals,rates,label=f"{iter} iterations")
+plt.xlabel("probabilites")
+plt.ylabel("performance")
+plt.grid(True)
+plt.legend()
+plt.show()
