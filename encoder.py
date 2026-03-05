@@ -112,6 +112,55 @@ def decoder(c,H,p,iterations,m,n):
     print("max iterations reached")
     return decoded
 
+def new_decoder(c,H,p,iterations,m,n):
+    checks_of_vars = [[] for _ in range(n)]
+    vars_of_checks = [[] for _ in range(m)]
+    for r in range(m):
+        for col in range(n):
+            if H[r][col]==1:
+                checks_of_vars[col].append(r)
+                vars_of_checks[r].append(col)
+    L0 = math.log((1-p)/p)
+    LLR = np.zeros(n)
+    for i in range(n):
+        if c[i] == 1:
+            LLR[i] = -L0
+        else:
+            LLR[i] = L0
+    v_to_c = {}
+    c_to_v = {}
+    for i in range(m):
+        for j in vars_of_checks[i]:
+            v_to_c[(i,j)] = LLR[j]
+            c_to_v[(i,j)] = 0.0
+    for iter in range(iterations):
+        for i in range(m):
+            for j in vars_of_checks[i]:
+                prod = 1
+                for k in vars_of_checks[i]:
+                    if j!=k:
+                        prod *= math.tanh(v_to_c[(i,k)]/2)
+                prod = max(min(prod,0.99999),-0.99999)
+                c_to_v[(i,j)] = 2*math.atanh(prod)
+        decoded = np.zeros(n,dtype=int)
+        for i in range(n):
+            curr = LLR[i]
+            for j in checks_of_vars[i]:
+                total = LLR[i]
+                for k in checks_of_vars[i]:
+                    if j!=k:
+                        total+=c_to_v[k,i]
+                v_to_c[j,i] = total
+                curr+=c_to_v[(j,i)]
+            if curr<0:
+                decoded[i] = 1
+            else:
+                decoded[i] = 0
+        if np.all(np.mod(H@decoded.T,2)==0):
+            return decoded
+    print("max iterations reached")
+    return decoded
+
 def find_msg(c,cols):
     return c[cols]
 
@@ -120,7 +169,7 @@ def main(prob,k,n,H,iter):
     G,free_cols = generator_mat(n,k,H)
     Code_wrd = encoder(G,message)
     flip_C_wrd = bit_flip(Code_wrd,n,prob)
-    decoded = decoder(flip_C_wrd,H,prob,iter,n-k,n)
+    decoded = new_decoder(flip_C_wrd,H,prob,iter,n-k,n)
     final_msg = find_msg(decoded,free_cols)
     if np.array_equal(message,final_msg):
         return 1
