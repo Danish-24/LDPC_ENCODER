@@ -171,7 +171,7 @@ def main(prob,k,n,H,iter):
     flip_C_wrd = bit_flip(Code_wrd,n,prob)
     decoded = new_decoder(flip_C_wrd,H,prob,iter,n-k,n)
     final_msg = find_msg(decoded,free_cols)
-    if np.array_equal(message,final_msg):
+    if np.array_equal(Code_wrd,decoded):
         return 1
     else:
         return 0
