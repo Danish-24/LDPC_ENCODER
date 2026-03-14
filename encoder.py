@@ -158,7 +158,6 @@ def new_decoder(c,H,p,iterations,m,n):
                 decoded[i] = 0
         if np.all(np.mod(H@decoded.T,2)==0):
             return decoded
-    print("max iterations reached")
     return decoded
 
 def find_msg(c,cols):
@@ -193,7 +192,7 @@ for i in range(n-k):
     row = list(map(int,row))
     H.append(row)
 H = np.array(H)
-trials = 3000
+trials = 300
 for iter in range(10,101,20):
     p_vals = []
     rates = []
@@ -204,12 +203,12 @@ for iter in range(10,101,20):
         for i in range(trials):
             eff+=main(p,k,n,H,iter)
         eff = eff/trials
-        rates.append(eff)
+        rates.append(1-eff)
         p+=0.02
 
     plt.plot(p_vals,rates,label=f"{iter} iterations")
-plt.xlabel("probabilites")
-plt.ylabel("performance")
+plt.xlabel("Probability of Bit Flip")
+plt.ylabel("Failure rate")
 plt.grid(True)
 plt.legend()
 plt.show()
