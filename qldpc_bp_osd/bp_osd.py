@@ -52,7 +52,15 @@ def rank(m):
     else:
         _,pivots=rref(m)
         return len(pivots)
-    
+
+def stabilizer_matrix(Hb):
+    half = Hb.shape[1] // 2
+    return np.hstack([Hb[:, half:], Hb[:, :half]])
+
+def in_rowspace(H, v):
+    if np.all(v == 0):
+        return True
+    return rank(np.vstack([H, v.reshape(1,-1)])) == rank(H)
 def solve(H,s):
     m,n=H.shape
     H_aug=np.column_stack([H,s.reshape(-1,1)])
@@ -76,7 +84,6 @@ def osd(s,H,belief):
 
     H_per=H[:,blf_per]
     e_per=e[blf_per]
-    #H_rref,pivots= rref(H_per)
     s_res=np.mod(s+np.mod(H_per@e_per,2),2)
     J=[]
     H_j=np.empty((m,0),dtype=int)
@@ -156,7 +163,6 @@ def bp_decoder(s,H,p,iters):
     return e,f_llr
 
 def bp_osd_decode(Hb, s, p=0.05, iters=50):
-    """Run BP; fall back to OSD if BP fails. Returns binary error vector."""
     e, f_llr = bp_decoder(s, Hb, p, iters)
     if np.array_equal(np.mod(Hb @ e, 2), s):
         return e
@@ -193,14 +199,13 @@ def binary_to_pauli(b_v):
 #     max_iter=50
 #     e_dec=bp_osd(H_pauli,s,p,max_iter)
 #     print(binary_to_pauli(e_dec))
-def _success(Hb, e_true, e_decoded):
-    """Check if residual error (e_true XOR e_decoded) has zero syndrome.
-    Zero syndrome means residual is in stabilizer/logical kernel - best
-    practical check without knowing logical operators explicitly."""
+def _success(G_stab, Hb, e_true, e_decoded):
     residual = np.mod(e_true ^ e_decoded, 2)
-    return np.all(np.mod(Hb @ residual, 2) == 0)
+    if not np.all(np.mod(Hb @ residual, 2) == 0):
+        return False
+    return in_rowspace(G_stab, residual)
 
-def main_hlp(Hb, p, iters, is_osd=True):
+def main_hlp(Hb, G_stab, p, iters, is_osd=True):
     m, n = Hb.shape
     e = np.zeros(n, dtype=int)
     for i in range(n // 2):
@@ -215,36 +220,37 @@ def main_hlp(Hb, p, iters, is_osd=True):
 
     s = np.mod(Hb @ e, 2)
     if np.all(s == 0):
-        return 1 
+        return 1 if in_rowspace(G_stab, e) else 0
 
     e_bp, f_llr = bp_decoder(s, Hb, p, iters)
-    if _success(Hb, e, e_bp):
+    if _success(G_stab, Hb, e, e_bp):
         return 1
     if is_osd:
         e_osd = osd(s, Hb, f_llr)
-        if _success(Hb, e, e_osd):
+        if _success(G_stab, Hb, e, e_osd):
             return 1
     return 0
 def main(Hb):
-    trials=200
-    #for iter in range(10,101,20):
+    trials = 200
     iter = 50
+    G_stab = stabilizer_matrix(Hb)
     p_vals = []
     bp_wer = []
-    bp_osd_wer=[]
+    bp_osd_wer = []
     p = 0.02
-    while p<0.5:
+    while p < 0.5:
         p_vals.append(p)
-        succ_bp=0
-        succ_bp_osd=0
+        succ_bp = 0
+        succ_bp_osd = 0
         for i in range(trials):
-            succ_bp+=main_hlp(Hb,p,iter,is_osd=False)
-            succ_bp_osd+=main_hlp(Hb,p,iter,is_osd=True)
-        bp_wer.append(1-(succ_bp/trials))
-        bp_osd_wer.append(1-(succ_bp_osd/trials))
-        p+=0.02
-    plt.plot(p_vals,bp_wer,'--',label=f"Pure BP ")
-    plt.plot(p_vals,bp_osd_wer,'-',label=f"BP-OSD-0")
+            succ_bp     += main_hlp(Hb, G_stab, p, iter, is_osd=False)
+            succ_bp_osd += main_hlp(Hb, G_stab, p, iter, is_osd=True)
+        bp_wer.append(1 - succ_bp / trials)
+        bp_osd_wer.append(1 - succ_bp_osd / trials)
+        p += 0.02
+    floor = 0.5 / trials
+    plt.plot(p_vals, [max(w, floor) for w in bp_wer], '--', label="Pure BP")
+    plt.plot(p_vals, [max(w, floor) for w in bp_osd_wer], '-', label="BP-OSD-0")
 
     plt.yscale("log")
     plt.xlabel("Physical error rate")
