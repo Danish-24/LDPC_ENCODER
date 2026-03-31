@@ -14,7 +14,7 @@ def rref(H):
             if H[r][c] == 1:
                 pivot = r
                 break
-        if pivot==None:
+        if pivot is None:
             continue
         H[[i,pivot]] = H[[pivot,i]]
         for r in range(rows):
@@ -43,7 +43,7 @@ def pauli_to_binary(H):
             elif op=='Y':
                 Hx[i][j]=1
                 Hz[i][j]=1
-    Hb=np.hstack([Hz,Hx])
+    Hb=np.hstack([Hx,Hz])
     return Hb
 
 def rank(m):
@@ -71,12 +71,12 @@ def osd(s,H,belief):
     m,n=H.shape
     e=np.array([1 if val<0 else 0 for val in belief],dtype=int)
 
-    blf_per=np.argsort(np.abs(belief))[::-1] 
+    blf_per=np.argsort(np.abs(belief))[::-1]
     r_blf_per=np.argsort(blf_per)
 
     H_per=H[:,blf_per]
     e_per=e[blf_per]
-    H_rref,pivots= rref(H_per)
+    #H_rref,pivots= rref(H_per)
     s_res=np.mod(s+np.mod(H_per@e_per,2),2)
     J=[]
     H_j=np.empty((m,0),dtype=int)
@@ -87,18 +87,18 @@ def osd(s,H,belief):
             if rank(H_j_aug)==rank(H_j):
                 break
 
-        col=H_rref[:,i]
+        col=H_per[:,i]
         H_j1=np.column_stack([H_j,col.reshape(-1,1)])
         if rank(H_j1)>rank(H_j):
             J.append(i)
             H_j=H_j1
             s_res=np.mod(s_res+e_per[i]*col,2)
     if len(J)==0:
-        x=np.array([])
+        return e
     else:
         x=solve(H_j,s_res)
-        if x is None:
-            return e[r_blf_per]
+    if x is None:
+        return e
     
     e_f_per=e_per.copy()
     for k in range(len(J)):
@@ -142,34 +142,32 @@ def bp_decoder(s,H,p,iters):
                 c_to_v[(i,j)] = 2*math.atanh(prod)
         f_llr=np.zeros(n)
         for i in range(n):
+            f_llr[i] = LLR[i]
             for j in checks_of_vars[i]:
                 total = LLR[i]
                 for k in checks_of_vars[i]:
                     if j!=k:
                         total+=c_to_v[(k,i)]
-                f_llr[i]=total+c_to_v[(j,i)]
+                f_llr[i]+=c_to_v[(j,i)]
                 v_to_c[j,i] = total
         e=np.array([1 if val<0 else 0 for val in f_llr])
         if np.array_equal(np.mod(H@e,2),s):
             return e,f_llr
     return e,f_llr
 
-def bp_osd(H,s,p,iters):
-    Hb=pauli_to_binary(H)
-    e,fbeliefs=bp_decoder(s,Hb,p,iters)
-    c_s=np.mod(Hb@e,2)
-
-    if np.array_equal(c_s,s):
+def bp_osd_decode(Hb, s, p=0.05, iters=50):
+    """Run BP; fall back to OSD if BP fails. Returns binary error vector."""
+    e, f_llr = bp_decoder(s, Hb, p, iters)
+    if np.array_equal(np.mod(Hb @ e, 2), s):
         return e
-    else:
-        e_osd=osd(s,Hb,fbeliefs)
-        return e_osd
+    return osd(s, Hb, f_llr)
+
 def binary_to_pauli(b_v):
     n=len(b_v)//2
     s=""
     for i in range(n):
-        x=b_v[i]
-        z=b_v[i+n]
+        z=b_v[i]
+        x=b_v[i+n]
         if x==1 and z==1:
             s+='Y'
         elif x==1:
@@ -195,53 +193,59 @@ def binary_to_pauli(b_v):
 #     max_iter=50
 #     e_dec=bp_osd(H_pauli,s,p,max_iter)
 #     print(binary_to_pauli(e_dec))
-def main_hlp(Hb,p,iters,is_osd=True):
-    m,n=Hb.shape
+def _success(Hb, e_true, e_decoded):
+    """Check if residual error (e_true XOR e_decoded) has zero syndrome.
+    Zero syndrome means residual is in stabilizer/logical kernel - best
+    practical check without knowing logical operators explicitly."""
+    residual = np.mod(e_true ^ e_decoded, 2)
+    return np.all(np.mod(Hb @ residual, 2) == 0)
 
-    e=np.zeros(n,dtype=int)
-    for i in range(n//2):
-        r=np.random.rand()
-        if r <p/3:
-            e[i]=1
-        elif r<2*p/3:
-            e[i+n//2]=1
-        elif r<p:
-            e[i]=1
-            e[i+n//2]=1
+def main_hlp(Hb, p, iters, is_osd=True):
+    m, n = Hb.shape
+    e = np.zeros(n, dtype=int)
+    for i in range(n // 2):
+        r = np.random.rand()
+        if r < p / 3:
+            e[i + n // 2] = 1
+        elif r < 2 * p / 3:
+            e[i] = 1
+        elif r < p:
+            e[i] = 1
+            e[i + n // 2] = 1
 
-    s=np.mod(Hb@e,2)
-    if np.all(s==0):
-        return 1
-    e_bp,f_llr=bp_decoder(s,Hb,p,iters)
-    if np.array_equal(np.mod(Hb@e_bp,2),s):
+    s = np.mod(Hb @ e, 2)
+    if np.all(s == 0):
+        return 1 
+
+    e_bp, f_llr = bp_decoder(s, Hb, p, iters)
+    if _success(Hb, e, e_bp):
         return 1
     if is_osd:
-        e_osd=osd(s,Hb,f_llr)
-        if np.array_equal(np.mod(Hb@e_osd,2),s):
+        e_osd = osd(s, Hb, f_llr)
+        if _success(Hb, e, e_osd):
             return 1
-
     return 0
-def main(Hb,n_qubits):
+def main(Hb):
     trials=200
-    for iter in range(10,101,20):
-        p_vals = []
-        bp_wer = []
-        bp_osd_wer=[]
-        p = 0.02
-        while p<0.5:
-            p_vals.append(p)
-            succ_bp=0
-            succ_bp_osd=0
-            for i in range(trials):
-                succ_bp+=main_hlp(Hb,p,iter,is_osd=False)
-                succ_bp_osd+=main_hlp(Hb,p,iter,is_osd=True)
-            bp_wer.append(1-(succ_bp/trials))
-            bp_osd_wer.append(1-(succ_bp_osd/trials))
-            p+=0.02
+    #for iter in range(10,101,20):
+    iter = 50
+    p_vals = []
+    bp_wer = []
+    bp_osd_wer=[]
+    p = 0.02
+    while p<0.5:
+        p_vals.append(p)
+        succ_bp=0
+        succ_bp_osd=0
+        for i in range(trials):
+            succ_bp+=main_hlp(Hb,p,iter,is_osd=False)
+            succ_bp_osd+=main_hlp(Hb,p,iter,is_osd=True)
+        bp_wer.append(1-(succ_bp/trials))
+        bp_osd_wer.append(1-(succ_bp_osd/trials))
+        p+=0.02
     plt.plot(p_vals,bp_wer,'--',label=f"Pure BP ")
     plt.plot(p_vals,bp_osd_wer,'-',label=f"BP-OSD-0")
 
-    # plt.xscale("log")
     plt.yscale("log")
     plt.xlabel("Physical error rate")
     plt.ylabel("WER")
@@ -250,24 +254,23 @@ def main(Hb,n_qubits):
     plt.legend()
     plt.show()
 if __name__ == "__main__":
-    m=int(input("Enter the no of stabilizers : "))
-    n=int(input("Enter the no of qubits : "))
-    print("Enter the Pauli operators(stabilizers)")
-    H_pauli=[]
+    m = int(input("Enter the no of stabilizers : "))
+    n = int(input("Enter the no of qubits : "))
+    print("Enter the Pauli operators (stabilizers):")
+    H_pauli = []
     for i in range(m):
-        row=input(f"{i+1}th stabilizer :").strip().replace('"','').upper()
+        row = input(f"  {i+1}: ").strip().replace('"','').upper()
         H_pauli.append(row)
     Hb=pauli_to_binary(H_pauli)
 
-    s_i=input("Enter the syndrome :").strip().replace('"','')
-    s=np.array([int(b) for b in s_i])
-    main(Hb,n)
-
-
-   
-    
-
-
-
-
-
+    mode = input("Mode - [d]ecode single syndrome / [s]imulate WER? ").strip().lower()
+    if mode == 'd':
+        s_i = input("Enter syndrome : ").strip().replace('"','')
+        s = np.array([int(b) for b in s_i])
+        if np.all(s == 0):
+            print("Syndrome is zero - no error.")
+        else:
+            e_dec = bp_osd_decode(Hb, s, p=0.05, iters=50)
+            print("Decoded error:", binary_to_pauli(e_dec))
+    else:
+        main(Hb)
