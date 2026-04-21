@@ -518,7 +518,7 @@ def main(Hb):
     iter = 40
     G_stab = stabilizer_matrix(Hb)
     # p_vals = []
-    p_vals=np.logspace(-2,-1,10)
+    p_vals = np.linspace(0.01, 0.2, 10)
     bp_wer = []
     bp_osd_wer = []
     # p = 0.02
@@ -542,7 +542,7 @@ def main(Hb):
     plt.title("BP-OSD vs BP")
     plt.grid(True)
     plt.legend()
-    plt.show()
+    plt.savefig('graph.png')
 if __name__ == "__main__":
     m = int(input("Enter the no of stabilizers : "))
     n = int(input("Enter the no of qubits : "))
