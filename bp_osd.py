@@ -418,18 +418,22 @@ def bp_decoder(s,H,p,iters):
         for j in vars_of_checks[i]:
             v_to_c[(i,j)] = LLR[j]
             c_to_v[(i,j)] = 0.0
+    norm=0.625
     for iter in range(iters):
         for i in range(m):
             for j in vars_of_checks[i]:
-                prod = 1
+                sign = 1
+                if s[i]==1:
+                    sign*=-1
+                min_val=float('inf')
                 for k in vars_of_checks[i]:
                     if j!=k:
-                        prod *= math.tanh(v_to_c[(i,k)]/2)
-                       
-                if s[i]==1:
-                    prod*=-1
-                prod = max(min(prod,0.99999),-0.99999)
-                c_to_v[(i,j)] = 2*math.atanh(prod)
+                        if v_to_c[(i,k)]<0:
+                            sign *= -1
+                        min_val = min(abs(v_to_c[(i,k)]),min_val)
+                
+                
+                c_to_v[(i,j)] = norm*sign*min_val
         f_llr=np.zeros(n)
         for i in range(n):
             # f_llr[i] = LLR[i]
